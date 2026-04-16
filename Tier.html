@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TIERLIST MASTER - ULTIMATE</title>
+    <script src="https://cloudflare.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #121212; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        
+        /* Controls */
+        .controls { background: #1e1e1e; padding: 20px; border-radius: 12px; display: flex; gap: 15px; align-items: center; margin-bottom: 30px; border: 1px solid #333; flex-wrap: wrap; justify-content: center; }
+        input { background: #333; border: 1px solid #444; color: white; padding: 8px; border-radius: 4px; }
+        input[type="number"] { width: 60px; }
+        button { background: #3498db; color: white; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { background: #2980b9; transform: translateY(-1px); }
+        .btn-add-multi { background: #2ecc71; }
+        .btn-download { background: #e67e22; }
+        .btn-quick { background: #9b59b6; }
+        .btn-reset { background: #e74c3c; } /* Red for Reset */
+
+        /* Tier List Structure */
+        #tier-container { width: 100%; max-width: 900px; background: #000; border: 1px solid #333; }
+        .tier-row { display: flex; border-bottom: 1px solid #222; min-height: 90px; position: relative; }
+        .tier-label { width: 100px; min-width: 100px; display: flex; align-items: center; justify-content: center; color: #000; font-weight: 900; font-size: 24px; text-align: center; border-right: 1px solid #222; position: relative; }
+        
+        .delete-tier { position: absolute; top: 2px; left: 2px; font-size: 10px; cursor: pointer; background: rgba(0,0,0,0.4); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; opacity: 0; transition: 0.2s; z-index: 5; }
+        .tier-row:hover .delete-tier { opacity: 1; }
+
+        .tier-items { flex-grow: 1; display: flex; flex-wrap: wrap; padding: 10px; gap: 10px; align-items: center; min-height: 90px; }
+        .drag-over { background: #1a1a1a !important; }
+
+        /* Item Bank */
+        .bank-title { margin-top: 40px; color: #888; text-transform: uppercase; letter-spacing: 2px; font-size: 14px; }
+        #bank { width: 100%; max-width: 900px; min-height: 120px; background: #1a1a1a; margin-top: 10px; display: flex; flex-wrap: wrap; padding: 15px; gap: 10px; border: 2px dashed #444; border-radius: 8px; }
+
+        .item { width: 80px; height: 80px; background: #333; cursor: grab; background-size: cover; background-position: center; border-radius: 4px; border: 2px solid transparent; flex-shrink: 0; }
+        .item:active { cursor: grabbing; border-color: #3498db; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>TIERLIST MASTER <span style="color: #3498db;">ULTIMATE</span></h1>
+    </div>
+
+    <div class="controls">
+        <button onclick="addTier()">➕ Add 1 Tier</button>
+        
+        <div style="border-left: 1px solid #444; padding-left: 15px; display: flex; gap: 10px; align-items: center;">
+            <span>Add:</span>
+            <input type="number" id="multiCount" value="3" min="1">
+            <button class="btn-add-multi" onclick="addMultipleTiers()">🚀 Tiers</button>
+        </div>
+
+        <div style="border-left: 1px solid #444; padding-left: 15px; display: flex; gap: 10px; align-items: center;">
+            <input type="text" id="quickTierName" placeholder="Tier e.g. S" style="width: 80px;" onkeydown="if(event.key==='Enter') moveBankToTier()">
+            <button class="btn-quick" onclick="moveBankToTier()">⚡ Move All</button>
+        </div>
+
+        <button onclick="document.getElementById('imageLoader').click()">🖼️ Upload</button>
+        <button class="btn-download" onclick="downloadTierList()">💾 Download</button>
+        <button class="btn-reset" onclick="resetBoard()">🧹 Reset Board</button>
+        <input type="file" id="imageLoader" hidden accept="image/*" multiple onchange="handleImages(this.files)">
+    </div>
+
+    <div id="tier-container">
+        <div class="tier-row">
+            <div class="delete-tier" onclick="removeRow(this)">✕</div>
+            <div class="tier-label" style="background: #ff7f7f;" contenteditable="true">S</div>
+            <div class="tier-items" ondrop="drop(event)" ondragover="allowDrop(event)" ondragleave="clearStyles(event)"></div>
+        </div>
+        <div class="tier-row">
+            <div class="delete-tier" onclick="removeRow(this)">✕</div>
+            <div class="tier-label" style="background: #ffbf7f;" contenteditable="true">A</div>
+            <div class="tier-items" ondrop="drop(event)" ondragover="allowDrop(event)" ondragleave="clearStyles(event)"></div>
+        </div>
+    </div>
+
+    <div class="bank-title">Unranked Items (Bank)</div>
+    <div id="bank" ondrop="drop(event)" ondragover="allowDrop(event)" ondragleave="clearStyles(event)"></div>
+
+    <script>
+        const colors = ['#ff7f7f', '#ffbf7f', '#ffff7f', '#7fff7f', '#7fbfff', '#7f7fff', '#ff7fff', '#bf7fff', '#333333'];
+        const labels = ['S', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+        let tierCount = 2;
+        let imgId = 0;
+
+        function resetBoard() {
+            if (confirm("Clear all images and tiers?")) {
+                // Clear all images
+                document.getElementById('bank').innerHTML = '';
+                const tiers = document.querySelectorAll('.tier-items');
+                tiers.forEach(t => t.innerHTML = '');
+                
+                // Optional: reset tiers to default (uncomment if desired)
+                // location.reload();
+            }
+        }
+
+        function moveBankToTier() {
+            const name = document.getElementById('quickTierName').value.trim().toUpperCase();
+            const bank = document.getElementById('bank');
+            const items = Array.from(bank.children);
+            if (items.length === 0) return;
+
+            const rows = document.querySelectorAll('.tier-row');
+            let targetContainer = null;
+            rows.forEach(row => {
+                if (row.querySelector('.tier-label').innerText.trim().toUpperCase() === name) {
+                    targetContainer = row.querySelector('.tier-items');
+                }
+            });
+
+            if (targetContainer) {
+                items.forEach(item => targetContainer.appendChild(item));
+                document.getElementById('quickTierName').value = "";
+            }
+        }
+
+        function addTier() {
+            const container = document.getElementById('tier-container');
+            const newRow = document.createElement('div');
+            newRow.className = 'tier-row';
+            const color = colors[tierCount % colors.length];
+            const label = labels[tierCount] || 'Tier ' + (tierCount + 1);
+            newRow.innerHTML = `
+                <div class="delete-tier" onclick="removeRow(this)">✕</div>
+                <div class="tier-label" style="background: ${color};" contenteditable="true">${label}</div>
+                <div class="tier-items" ondrop="drop(event)" ondragover="allowDrop(event)" ondragleave="clearStyles(event)"></div>
+            `;
+            container.appendChild(newRow);
+            tierCount++;
+        }
+
+        function addMultipleTiers() {
+            const count = document.getElementById('multiCount').value;
+            for(let i = 0; i < count; i++) addTier();
+        }
+
+        function removeRow(btn) {
+            const row = btn.parentElement;
+            const items = row.querySelector('.tier-items').children;
+            const bank = document.getElementById('bank');
+            while(items.length > 0) bank.appendChild(items[0]);
+            row.remove();
+        }
+
+        function allowDrop(ev) { ev.preventDefault(); getTarget(ev.target)?.classList.add('drag-over'); }
+        function clearStyles(ev) { getTarget(ev.target)?.classList.remove('drag-over'); }
+        function drag(ev) { ev.dataTransfer.setData("text", ev.target.id); }
+        function drop(ev) {
+            ev.preventDefault();
+            const item = document.getElementById(ev.dataTransfer.getData("text"));
+            const target = getTarget(ev.target);
+            if (target && item) {
+                target.classList.remove('drag-over');
+                target.appendChild(item);
+            }
+        }
+
+        function getTarget(el) {
+            while (el && !el.classList.contains('tier-items') && el.id !== 'bank') el = el.parentElement;
+            return el;
+        }
+
+        function handleImages(files) {
+            const bank = document.getElementById('bank');
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const div = document.createElement('div');
+                    div.id = 'img-' + imgId++;
+                    div.className = 'item';
+                    div.draggable = true;
+                    div.style.backgroundImage = `url(${e.target.result})`;
+                    div.ondragstart = drag;
+                    bank.appendChild(div);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function downloadTierList() {
+            html2canvas(document.getElementById('tier-container')).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'tierlist.png';
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }
+    </script>
+</body>
+</html>
